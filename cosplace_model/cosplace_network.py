@@ -7,6 +7,8 @@ from typing import Tuple
 
 from cosplace_model.layers import Flatten, L2Norm, GeM
 
+import timm
+
 # The number of channels in the last convolutional layer, the one before average pooling
 CHANNELS_NUM_IN_LAST_CONV = {
     "ResNet18": 512,
@@ -22,6 +24,7 @@ CHANNELS_NUM_IN_LAST_CONV = {
     "EfficientNet_B5": 2048,
     "EfficientNet_B6": 2304,
     "EfficientNet_B7": 2560,
+    "vit_small_patch16_224": 384,
 }
 
 
@@ -37,16 +40,29 @@ class GeoLocalizationNet(nn.Module):
         super().__init__()
         assert backbone in CHANNELS_NUM_IN_LAST_CONV, f"backbone must be one of {list(CHANNELS_NUM_IN_LAST_CONV.keys())}"
         self.backbone, features_dim = get_backbone(backbone, train_all_layers)
-        self.aggregation = nn.Sequential(
-            L2Norm(),
-            GeM(),
-            Flatten(),
-            nn.Linear(features_dim, fc_output_dim),
-            L2Norm()
-        )
+        # print(f'\n-----{list(self.backbone.state_dict().keys())}------\n')
+
+        if backbone.startswith("vit"):
+            self.aggregation = nn.Sequential(
+                L2Norm(),
+                # GeM(),
+                # Flatten(),
+                nn.Linear(features_dim, fc_output_dim),
+                L2Norm()
+            )
+        else:
+            self.aggregation = nn.Sequential(
+                L2Norm(),
+                GeM(),
+                Flatten(),
+                nn.Linear(features_dim, fc_output_dim),
+                L2Norm()
+            )
     
     def forward(self, x):
         x = self.backbone(x)
+        # print(f'\n{x.shape}\n')
+        # x = x[:, 0, :]  # 取 cls_token
         x = self.aggregation(x)
         return x
 
@@ -64,43 +80,59 @@ def get_pretrained_torchvision_model(backbone_name : str) -> torch.nn.Module:
 
 
 def get_backbone(backbone_name : str, train_all_layers : bool) -> Tuple[torch.nn.Module, int]:
-    backbone = get_pretrained_torchvision_model(backbone_name)
-    if backbone_name.startswith("ResNet"):
-        if train_all_layers:
-            logging.debug(f"Train all layers of the {backbone_name}")
-        else:
-            for name, child in backbone.named_children():
-                if name == "layer3":  # Freeze layers before conv_3
-                    break
-                for params in child.parameters():
-                    params.requires_grad = False
-            logging.debug(f"Train only layer3 and layer4 of the {backbone_name}, freeze the previous ones")
+    if backbone_name.startswith("vit"):
+        # pretrained=True 需要vpn代理
+        backbone = timm.create_model(backbone_name, pretrained=False)
+        
+        # ViT 不需要冻结卷积层，但可以冻结整个模型
+        if not train_all_layers:
+            for param in backbone.parameters():
+                param.requires_grad = False
+            logging.debug(f"Freezing all layers of the {backbone_name}")
+        
+        # 移除 head
+        backbone.reset_classifier(num_classes=0)
+        # 获取 ViT 的输出特征维度，通常是 cls token 的维度
+        features_dim = CHANNELS_NUM_IN_LAST_CONV[backbone_name]
+        
+        return backbone, features_dim
+    else:
+        backbone = get_pretrained_torchvision_model(backbone_name)
+        if backbone_name.startswith("ResNet"):
+            if train_all_layers:
+                logging.debug(f"Train all layers of the {backbone_name}")
+            else:
+                for name, child in backbone.named_children():
+                    if name == "layer3":  # Freeze layers before conv_3
+                        break
+                    for params in child.parameters():
+                        params.requires_grad = False
+                logging.debug(f"Train only layer3 and layer4 of the {backbone_name}, freeze the previous ones")
 
-        layers = list(backbone.children())[:-2]  # Remove avg pooling and FC layer
-    
-    elif backbone_name == "VGG16":
-        layers = list(backbone.features.children())[:-2]  # Remove avg pooling and FC layer
-        if train_all_layers:
-            logging.debug("Train all layers of the VGG-16")
-        else:
-            for layer in layers[:-5]:
-                for p in layer.parameters():
-                    p.requires_grad = False
-            logging.debug("Train last layers of the VGG-16, freeze the previous ones")
+            layers = list(backbone.children())[:-2]  # Remove avg pooling and FC layer
+        
+        elif backbone_name == "VGG16":
+            layers = list(backbone.features.children())[:-2]  # Remove avg pooling and FC layer
+            if train_all_layers:
+                logging.debug("Train all layers of the VGG-16")
+            else:
+                for layer in layers[:-5]:
+                    for p in layer.parameters():
+                        p.requires_grad = False
+                logging.debug("Train last layers of the VGG-16, freeze the previous ones")
 
-    elif backbone_name.startswith("EfficientNet"):
-        if train_all_layers:
-            logging.debug(f"Train all layers of the {backbone_name}")
-        else:
-            for name, child in backbone.features.named_children():
-                if name == "5": # Freeze layers before block 5
-                    break
-                for params in child.parameters():
-                    params.requires_grad = False
-            logging.debug(f"Train only the last three blocks of the {backbone_name}, freeze the previous ones")
-        layers = list(backbone.children())[:-2] # Remove avg pooling and FC layer
-    
-    backbone = torch.nn.Sequential(*layers)
-    features_dim = CHANNELS_NUM_IN_LAST_CONV[backbone_name]
-    
-    return backbone, features_dim
+        elif backbone_name.startswith("EfficientNet"):
+            if train_all_layers:
+                logging.debug(f"Train all layers of the {backbone_name}")
+            else:
+                for name, child in backbone.features.named_children():
+                    if name == "5": # Freeze layers before block 5
+                        break
+                    for params in child.parameters():
+                        params.requires_grad = False
+                logging.debug(f"Train only the last three blocks of the {backbone_name}, freeze the previous ones")
+            layers = list(backbone.children())[:-2] # Remove avg pooling and FC layer
+        backbone = torch.nn.Sequential(*layers)
+        features_dim = CHANNELS_NUM_IN_LAST_CONV[backbone_name]
+        
+        return backbone, features_dim

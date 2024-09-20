@@ -17,7 +17,7 @@ def parse_arguments(is_training: bool = True):
                                  "ResNet18", "ResNet50", "ResNet101", "ResNet152",
                                  "EfficientNet_B0", "EfficientNet_B1", "EfficientNet_B2",
                                  "EfficientNet_B3", "EfficientNet_B4", "EfficientNet_B5", 
-                                 "EfficientNet_B6", "EfficientNet_B7"], help="_")
+                                 "EfficientNet_B6", "EfficientNet_B7", "vit_small_patch16_224"], help="_")
     parser.add_argument("--fc_output_dim", type=int, default=512,
                         help="Output dimension of final fully connected layer")
     parser.add_argument("--train_all_layers", default=False, action="store_true",
@@ -28,7 +28,7 @@ def parse_arguments(is_training: bool = True):
     parser.add_argument("--augmentation_device", type=str, default="cuda",
                         choices=["cuda", "cpu"],
                         help="on which device to run data augmentation")
-    parser.add_argument("--batch_size", type=int, default=32, help="_")
+    parser.add_argument("--batch_size", type=int, default=8, help="_")
     parser.add_argument("--epochs_num", type=int, default=50, help="_")
     parser.add_argument("--iterations_per_epoch", type=int, default=10000, help="_")
     parser.add_argument("--lr", type=float, default=0.00001, help="_")
@@ -54,6 +54,8 @@ def parse_arguments(is_training: bool = True):
                         help="path to checkpoint to resume, e.g. logs/.../last_checkpoint.pth")
     parser.add_argument("--resume_model", type=str, default=None,
                         help="path to model to resume, e.g. logs/.../best_model.pth")
+    # GPU Options
+    parser.add_argument("--multi_gpu", default=False, action="store_true", help="Use multiple GPUs if available")
     # Other parameters
     parser.add_argument("--device", type=str, default="cuda",
                         choices=["cuda", "cpu"], help="_")

@@ -39,8 +39,9 @@ class TestDataset(data.Dataset):
 
         transforms_list = []
         if resize_test_imgs:
-            # Resize to image_size along the shorter side while maintaining aspect ratio
-            transforms_list += [transforms.Resize(image_size, antialias=True)]
+            # ～Resize to image_size along the shorter side while maintaining aspect ratio～
+            # Resize to (image_size, image_size) ignoring the original aspect ratio
+            transforms_list += [transforms.Resize((image_size, image_size), antialias=True)]
         transforms_list += [
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),

@@ -49,7 +49,8 @@ class TrainDataset(torch.utils.data.Dataset):
         elif current_group == 0:
             logging.info(f"Using cached dataset {filename}")
         
-        classes_per_group, self.images_per_class = torch.load(filename)
+        classes_per_group, self.images_per_class = torch.load(filename) # weights_only=True会严重影响读取速度
+
         if current_group >= len(classes_per_group):
             raise ValueError(f"With this configuration there are only {len(classes_per_group)} " +
                              f"groups, therefore I can't create the {current_group}th group. " +

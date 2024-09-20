@@ -38,7 +38,8 @@ else:
 model = model.to(args.device)
 
 test_ds = TestDataset(args.test_set_folder, queries_folder="queries_v1",
-                      positive_dist_threshold=args.positive_dist_threshold)
+                      positive_dist_threshold=args.positive_dist_threshold,
+                      image_size=args.image_size, resize_test_imgs=args.resize_test_imgs)
 
 recalls, recalls_str = test.test(args, test_ds, model, args.num_preds_to_save)
 logging.info(f"{test_ds}: {recalls_str}")

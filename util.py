@@ -32,7 +32,10 @@ def resume_train(args: Namespace, output_folder: str, model: torch.nn.Module,
     start_epoch_num = checkpoint["epoch_num"]
     
     model_state_dict = checkpoint["model_state_dict"]
-    model.load_state_dict(model_state_dict)
+    if isinstance(model, torch.nn.DataParallel):
+        model.module.load_state_dict(model_state_dict)
+    else:
+        model.load_state_dict(model_state_dict)
     
     model = model.to(args.device)
     model_optimizer.load_state_dict(checkpoint["optimizer_state_dict"])

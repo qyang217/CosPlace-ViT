@@ -28,6 +28,7 @@ def test(args: Namespace, eval_ds: Dataset, model: torch.nn.Module,
                                          batch_size=args.infer_batch_size, pin_memory=(args.device == "cuda"))
         all_descriptors = np.empty((len(eval_ds), args.fc_output_dim), dtype="float32")
         for images, indices in tqdm(database_dataloader, ncols=100):
+            # print(f"\nDB Images shape: {images.shape}\n")       
             descriptors = model(images.to(args.device))
             descriptors = descriptors.cpu().numpy()
             all_descriptors[indices.numpy(), :] = descriptors
@@ -38,13 +39,25 @@ def test(args: Namespace, eval_ds: Dataset, model: torch.nn.Module,
         queries_dataloader = DataLoader(dataset=queries_subset_ds, num_workers=args.num_workers,
                                         batch_size=queries_infer_batch_size, pin_memory=(args.device == "cuda"))
         for images, indices in tqdm(queries_dataloader, ncols=100):
+            # print(f"\nQR Images shape: {images.shape}\n")
             descriptors = model(images.to(args.device))
             descriptors = descriptors.cpu().numpy()
             all_descriptors[indices.numpy(), :] = descriptors
     
     queries_descriptors = all_descriptors[eval_ds.database_num:]
     database_descriptors = all_descriptors[:eval_ds.database_num]
-    
+
+    # print(f'\n{queries_descriptors.shape}\n')
+    # print(f'\n{database_descriptors.shape}\n')
+
+    # print(np.any(np.isnan(database_descriptors)))  # 检查是否有 NaN
+    # print(np.any(np.isinf(database_descriptors)))  # 检查是否有 Inf
+
+    # print(type(database_descriptors))
+    # print(database_descriptors.shape)
+    # print(database_descriptors.dtype)
+
+
     # Use a kNN to find predictions
     faiss_index = faiss.IndexFlatL2(args.fc_output_dim)
     faiss_index.add(database_descriptors)

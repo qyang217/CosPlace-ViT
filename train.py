@@ -29,21 +29,35 @@ logging.info(" ".join(sys.argv))
 logging.info(f"Arguments: {args}")
 logging.info(f"The outputs are being saved in {args.output_folder}")
 
+logging.info(f"There are {torch.cuda.device_count()} GPUs and {multiprocessing.cpu_count()} CPUs.")
+
 #### Model
 model = cosplace_network.GeoLocalizationNet(args.backbone, args.fc_output_dim, args.train_all_layers)
+# 如果选择多GPU，使用DataParallel
 
-logging.info(f"There are {torch.cuda.device_count()} GPUs and {multiprocessing.cpu_count()} CPUs.")
+if args.multi_gpu and torch.cuda.device_count() > 1:
+    model = torch.nn.DataParallel(model)
+    logging.info(f"Using {torch.cuda.device_count()} GPUs for training")
 
 if args.resume_model is not None:
     logging.debug(f"Loading model from {args.resume_model}")
-    model_state_dict = torch.load(args.resume_model)
-    model.load_state_dict(model_state_dict)
+    model_state_dict = torch.load(args.resume_model, weights_only=True)
+    if args.backbone.startswith("vit"):
+        model_state_dict = {f"backbone.{k}": v for k, v in model_state_dict.items()}
+    if isinstance(model, torch.nn.DataParallel):
+        model.module.load_state_dict(model_state_dict, strict=False)
+    else:
+        model.load_state_dict(model_state_dict, strict=False)
 
 model = model.to(args.device).train()
 
 #### Optimizer
 criterion = torch.nn.CrossEntropyLoss()
-model_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+if isinstance(model, torch.nn.DataParallel):
+    model_optimizer = torch.optim.Adam(model.module.parameters(), lr=args.lr)
+else:
+    model_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
 #### Datasets
 groups = [TrainDataset(args, args.train_set_folder, M=args.M, alpha=args.alpha, N=args.N, L=args.L,
@@ -158,7 +172,7 @@ for epoch_num in range(start_epoch_num, args.epochs_num):
     # Save checkpoint, which contains all training parameters
     util.save_checkpoint({
         "epoch_num": epoch_num + 1,
-        "model_state_dict": model.state_dict(),
+        "model_state_dict": model.module.state_dict(),
         "optimizer_state_dict": model_optimizer.state_dict(),
         "classifiers_state_dict": [c.state_dict() for c in classifiers],
         "optimizers_state_dict": [c.state_dict() for c in classifiers_optimizers],
@@ -169,8 +183,11 @@ for epoch_num in range(start_epoch_num, args.epochs_num):
 logging.info(f"Trained for {epoch_num+1:02d} epochs, in total in {str(datetime.now() - start_time)[:-7]}")
 
 #### Test best model on test set v1
-best_model_state_dict = torch.load(f"{args.output_folder}/best_model.pth")
-model.load_state_dict(best_model_state_dict)
+best_model_state_dict = torch.load(f"{args.output_folder}/best_model.pth", weights_only=True)
+if isinstance(model, torch.nn.DataParallel):
+    model.module.load_state_dict(best_model_state_dict)
+else:
+    model.load_state_dict(best_model_state_dict)
 
 logging.info(f"Now testing on the test set: {test_ds}")
 recalls, recalls_str = test.test(args, test_ds, model, args.num_preds_to_save)
